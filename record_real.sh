@@ -4,6 +4,7 @@
 #   NUM_EPISODES=50 EPISODE_TIME_S=25 ./record_real.sh
 # Data lands in ~/so101_real_data/<date_time>/ (v3.0 format; convert with Isaac-GR00T's
 # scripts/lerobot_conversion/convert_v3_to_v2.py before training). Nothing is pushed to Hugging Face.
+# A Rerun window opens with the live camera image and the leader/follower joint curves.
 # Keys while recording: Right arrow = next episode, Left arrow = discard + redo current episode, Esc = stop
 # (best during the reset pause; Esc mid-episode also SAVES the running episode). Ctrl+C keeps finished episodes.
 # A failed start (motor handshake hiccup, camera busy) leaves no data behind and is retried automatically.
@@ -20,6 +21,7 @@ EPISODE_TIME_S="${EPISODE_TIME_S:-20}"
 RESET_TIME_S="${RESET_TIME_S:-10}"
 CAMERA_INDEX="${CAMERA_INDEX:-0}"
 MAX_TRIES="${MAX_TRIES:-5}"
+DISPLAY_DATA="${DISPLAY_DATA:-true}"   # live viewer (Rerun): camera image + joint curves; DISPLAY_DATA=false to turn off
 TASK_TEXT="${TASK_TEXT:-pick up the blue block and place it on the pink pad}"  # must match the sim task text
 mkdir -p "$OUT_BASE"
 
@@ -40,7 +42,7 @@ for try in $(seq 1 "$MAX_TRIES"); do
         --dataset.repo_id=local/so101_real_pickplace --dataset.root="$ROOT" \
         --dataset.push_to_hub=false --dataset.single_task="$TASK_TEXT" \
         --dataset.num_episodes="$NUM_EPISODES" --dataset.episode_time_s="$EPISODE_TIME_S" \
-        --dataset.reset_time_s="$RESET_TIME_S" --display_data=false
+        --dataset.reset_time_s="$RESET_TIME_S" --display_data=$DISPLAY_DATA
     status=$?
     if [ -n "$(find "$ROOT" -type f ! -path '*/meta/*' 2>/dev/null | head -1)" ]; then
         echo "Recorded data is in $ROOT (exit $status)"; exit "$status"
