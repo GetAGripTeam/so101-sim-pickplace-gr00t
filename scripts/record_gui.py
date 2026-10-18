@@ -146,6 +146,12 @@ class Recorder:
         self.gap = 0.0
         self.loop_hz = 0.0
         self.n_steps = 0
+        self.settings_file = Path(args.out_base) / ".gui_settings.json"
+        self.flip = {"h": args.flip_h, "v": args.flip_v, "rec": True}  # rec: mirror the recorded frames too
+        try:
+            self.flip.update({k: bool(v) for k, v in json.loads(self.settings_file.read_text()).get("flip", {}).items()})
+        except Exception:  # noqa: BLE001
+            pass
         self.sim: dict = {"enabled": bool(args.sim_host), "ok": None, "data": None, "age": None}
 
     # ---- setup
@@ -239,6 +245,10 @@ class Recorder:
                     self.dataset.clear_episode_buffer()
                     self.recording = False
                     self.status, self.message = "live", "Episode verworfen"
+                elif cmd == "flip" and not self.recording:
+                    self.flip.update({k: bool(payload[k]) for k in ("h", "v", "rec") if k in payload})
+                    self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+                    self.settings_file.write_text(json.dumps({"flip": self.flip}))
                 elif cmd == "reconnect":
                     self._disconnect()
                     self.connect()
@@ -275,18 +285,30 @@ class Recorder:
                 pass
         self.robot = self.teleop = None
 
+    def _flipped(self, img: np.ndarray) -> np.ndarray:
+        if self.flip["h"]:
+            img = img[:, ::-1]
+        if self.flip["v"]:
+            img = img[::-1]
+        return np.ascontiguousarray(img)
+
     # ---- main loop (30 Hz)
     def _step(self):
         from lerobot.datasets.utils import build_dataset_frame
         from lerobot.utils.constants import ACTION, OBS_STR
 
         obs = self.robot.get_observation()
+        view = None
+        if obs.get(CAM) is not None:
+            view = self._flipped(np.asarray(obs[CAM]))
+            if self.flip["rec"]:
+                obs[CAM] = view  # the recorded frames show exactly what the preview shows
         obs_p = self.obs_proc(obs)
         act = self.teleop.get_action()
         act_p = self.teleop_proc((act, obs))
 
         self.n_steps += 1
-        img = obs.get(CAM)
+        img = view
         if img is not None and self.n_steps % 2 == 0:  # preview at ~15 fps keeps the 30 Hz control loop free
             ok, buf = cv2.imencode(".jpg", cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 78])
             if ok:
@@ -351,7 +373,7 @@ class Recorder:
             "frames": self.ep_frames, "episodes": self.episodes, "target": self.args.target,
             "task": self.task, "root": str(self.root) if self.root else None,
             "joints": self.joints, "gap": round(self.gap, 1), "hz": round(self.loop_hz, 1),
-            "demo": self.args.demo, "sim": self.sim,
+            "demo": self.args.demo, "sim": self.sim, "flip": self.flip,
         }
 
     def poll_sim(self):
@@ -433,6 +455,8 @@ def main():
     p.add_argument("--target", type=int, default=int(os.environ.get("NUM_EPISODES", "50")))
     p.add_argument("--out-base", default=os.environ.get("OUT_BASE", str(Path.home() / "so101_real_data")))
     p.add_argument("--sim-host", default=os.environ.get("SIM_HOST", ""), help="ssh target of the VM, e.g. ubuntu@<ip>")
+    p.add_argument("--flip-h", action="store_true", default=os.environ.get("FLIP_H") == "1", help="mirror the image left/right")
+    p.add_argument("--flip-v", action="store_true", default=os.environ.get("FLIP_V") == "1", help="mirror the image up/down")
     p.add_argument("--no-browser", action="store_true")
     args = p.parse_args()
 

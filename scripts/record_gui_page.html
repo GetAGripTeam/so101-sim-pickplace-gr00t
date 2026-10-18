@@ -37,6 +37,11 @@
   .badge.rec{background:var(--red)}
   .tbar{height:6px;background:var(--line);border-radius:4px;margin-top:10px;overflow:hidden}
   .tbar div{height:100%;width:0;background:var(--red);transition:width .2s linear}
+  .flipbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:13px}
+  .flipbar .lbl{color:var(--muted);font-weight:600}
+  button.tog{padding:7px 12px;border-radius:9px;background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;flex-direction:row}
+  button.tog.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .chk{display:flex;align-items:center;gap:6px;color:var(--muted)}
   .msg{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-weight:500}
   .msg.warn{border-color:var(--amber);color:var(--amber)} .msg.bad{border-color:var(--red);color:var(--red)}
   .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
@@ -87,9 +92,15 @@
     <div class="card">
       <div class="video">
         <img id="cam" src="/stream.mjpg" alt="Kamera">
-        <div class="overlay"><span class="badge" id="recBadge" hidden>● REC</span><span class="badge" id="timer">0:00</span><span class="badge" id="frames">0 Frames</span></div>
+        <div class="overlay"><span class="badge" id="recBadge" hidden>● REC</span><span class="badge" id="timer">0:00</span><span class="badge" id="frames">0 Frames</span><span class="badge" id="flipBadge" hidden></span></div>
       </div>
       <div class="tbar"><div id="tbar"></div></div>
+      <div class="flipbar">
+        <span class="lbl">Bild spiegeln</span>
+        <button id="fH" class="tog">↔ links/rechts</button>
+        <button id="fV" class="tog">↕ oben/unten</button>
+        <label class="chk"><input type="checkbox" id="fRec"> auch in der Aufnahme speichern</label>
+      </div>
       <div id="msg" class="msg">…</div>
       <div class="btns">
         <button id="bStart" class="b-start">Episode starten<small><kbd>Leertaste</kbd></small></button>
@@ -165,6 +176,12 @@ function render(s){
   $("bFinish").disabled = s.recording || s.status === "saving" || s.status === "finished";
   if (!taskDirty && document.activeElement !== $("task")) $("task").value = s.task;
   $("task").disabled = s.recording;
+  $("fH").classList.toggle("on", s.flip.h); $("fV").classList.toggle("on", s.flip.v);
+  $("fRec").checked = s.flip.rec;
+  ["fH", "fV", "fRec"].forEach(id => $(id).disabled = s.recording);
+  const mirrored = s.flip.h || s.flip.v;
+  $("flipBadge").hidden = !mirrored;
+  $("flipBadge").textContent = s.flip.rec ? "gespiegelt (auch gespeichert)" : "gespiegelt (nur Vorschau)";
   const n = s.episodes.length;
   $("epN").textContent = n; $("epT").textContent = s.target;
   $("pbar").style.width = Math.min(100, n / s.target * 100) + "%";
@@ -201,6 +218,10 @@ async function cmd(c){
 $("bStart").onclick = () => cmd("start");
 $("bSave").onclick = () => cmd("save");
 $("bDiscard").onclick = () => cmd("discard");
+const setFlip = patch => fetch("/api/cmd", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({cmd: "flip", ...st.flip, ...patch})});
+$("fH").onclick = () => setFlip({h: !st.flip.h});
+$("fV").onclick = () => setFlip({v: !st.flip.v});
+$("fRec").onchange = e => setFlip({rec: e.target.checked});
 $("bReconnect").onclick = () => cmd("reconnect");
 $("bFinish").onclick = () => { if (confirm("Session beenden und Datensatz abschließen?")) cmd("finish"); };
 $("task").oninput = () => { taskDirty = true; };
