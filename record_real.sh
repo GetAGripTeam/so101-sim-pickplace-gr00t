@@ -23,7 +23,7 @@ RESET_TIME_S="${RESET_TIME_S:-10}"
 CAMERA_INDEX="${CAMERA_INDEX:-0}"
 MAX_TRIES="${MAX_TRIES:-5}"
 DISPLAY_DATA="${DISPLAY_DATA:-true}"   # live viewer (Rerun): camera image + joint curves; DISPLAY_DATA=false to turn off
-TASK_TEXT="${TASK_TEXT:-pick up the blue block and place it on the pink pad}"  # must match the sim task text
+TASK_TEXT="${TASK_TEXT:-stack the medium, then the big, then the small blue block on the pink pad}"  # must match the sim task text
 mkdir -p "$OUT_BASE"
 
 # Delete leftovers of failed starts: folders that only contain meta/ and no recorded data.

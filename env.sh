@@ -20,7 +20,12 @@ export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 export CUBE_COLOR="${CUBE_COLOR:-red}"
 export PAD_COLOR="${PAD_COLOR:-green}"
 export PAD_NAME="${PAD_NAME:-$PAD_COLOR}"   # word used in the task text (PAD_COLOR may be an "r,g,b" triple)
-export TASK="${TASK:-pick up the $CUBE_COLOR block and place it on the $PAD_NAME pad}"
+export STACK="${STACK:-0}"
+if [ "$STACK" = 1 ]; then
+    export TASK="${TASK:-stack the medium, then the big, then the small $CUBE_COLOR block on the $PAD_NAME pad}"
+else
+    export TASK="${TASK:-pick up the $CUBE_COLOR block and place it on the $PAD_NAME pad}"
+fi
 export DATASETS_DIR="${DATASETS_DIR:-$PROJECT_DIR/datasets}"
 export DATASET_NAME="${DATASET_NAME:-so101_sim_pickplace}"
 export DATASET_ROOT="${DATASET_ROOT:-$DATASETS_DIR/local/$DATASET_NAME}"

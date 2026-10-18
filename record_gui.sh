@@ -8,5 +8,5 @@
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./robot.local.sh
 export PATH="$PWD/.venv/bin:$PATH"
-export TASK_TEXT="${TASK_TEXT:-stack the big, medium and small blue block on the pink pad}"
+export TASK_TEXT="${TASK_TEXT:-stack the medium, then the big, then the small blue block on the pink pad}"
 exec .venv/bin/python scripts/record_gui.py "$@"

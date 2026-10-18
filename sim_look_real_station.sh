@@ -18,7 +18,10 @@ export FLOOR_RGB="0.08,0.08,0.09"
 export ROBOT_RGB="0.85,0.85,0.85"       # printed parts white, servos stay dark
 export LIGHT_INTENSITY=150
 
-# Block + pad (task text becomes "pick up the blue block and place it on the pink pad")
+# Task: stack three blocks (medium 30 mm, then big 40 mm, then small 25 mm) on the pad
+export STACK=1
+
+# Block + pad (task text: "stack the medium, then the big, then the small blue block on the pink pad")
 export CUBE_COLOR=blue
 export CUBE_RGB="0.045,0.045,0.2"
 export PAD_COLOR="0.87,0.21,0.25"
