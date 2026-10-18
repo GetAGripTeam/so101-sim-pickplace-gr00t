@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>SO-101 Recorder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#ffffff; --ink:#15181e; --muted:#6a7280; --line:#e3e6eb;
+    --blue:#2563eb; --green:#16a34a; --red:#dc2626; --amber:#d97706; --gray:#64748b;
+    --lead:#7c3aed; --fol:#0ea5e9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0f1217; --card:#171b22; --ink:#e8ebf0; --muted:#8b94a3; --line:#262c36; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
+  header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.2px}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;font-weight:600;font-size:13px;color:#fff;background:var(--gray)}
+  .chip i{width:9px;height:9px;border-radius:50%;background:#fff;display:inline-block}
+  .chip.live{background:var(--green)} .chip.recording{background:var(--red)} .chip.waiting_pose,.chip.saving,.chip.connecting,.chip.starting{background:var(--amber)} .chip.error{background:var(--red)} .chip.finished{background:var(--blue)}
+  .chip.recording i{animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  .spacer{flex:1}
+  .taskbox{display:flex;align-items:center;gap:8px;flex:1;max-width:640px}
+  .taskbox label{color:var(--muted);font-size:13px;white-space:nowrap}
+  .taskbox input{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+  main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);gap:18px;padding:18px 22px;max-width:1500px;margin:0 auto}
+  @media (max-width:1000px){main{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 12px;font-weight:650}
+  .video{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+  .video img{width:100%;height:100%;object-fit:contain;display:block}
+  .video .overlay{position:absolute;left:12px;top:12px;display:flex;gap:8px}
+  .badge{background:rgba(0,0,0,.62);color:#fff;padding:4px 10px;border-radius:8px;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums}
+  .badge.rec{background:var(--red)}
+  .tbar{height:6px;background:var(--line);border-radius:4px;margin-top:10px;overflow:hidden}
+  .tbar div{height:100%;width:0;background:var(--red);transition:width .2s linear}
+  .msg{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-weight:500}
+  .msg.warn{border-color:var(--amber);color:var(--amber)} .msg.bad{border-color:var(--red);color:var(--red)}
+  .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+  button{font:inherit;font-weight:650;border:0;border-radius:12px;padding:15px 10px;cursor:pointer;color:#fff;background:var(--gray);display:flex;flex-direction:column;align-items:center;gap:2px;transition:transform .05s,filter .15s}
+  button small{font-weight:500;opacity:.85;font-size:12px}
+  button:hover:not(:disabled){filter:brightness(1.08)} button:active:not(:disabled){transform:scale(.98)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  .b-start{background:var(--green)} .b-save{background:var(--blue)} .b-discard{background:var(--red)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .row2 button{padding:10px;background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600}
+  .progress{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .progress b{font-size:30px;font-variant-numeric:tabular-nums} .progress span{color:var(--muted)}
+  .pbar{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin-bottom:12px}
+  .pbar div{height:100%;background:var(--blue);width:0;transition:width .3s}
+  .joint{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center;margin:8px 0;font-size:13px}
+  .joint .name{color:var(--muted)}
+  .bars{position:relative;height:22px}
+  .track{position:absolute;left:0;right:0;height:9px;background:var(--line);border-radius:5px}
+  .track.l{top:0} .track.f{top:12px}
+  .track div{position:absolute;top:0;bottom:0;border-radius:5px}
+  .track.l div{background:var(--lead)} .track.f div{background:var(--fol)}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+  .eps{max-height:230px;overflow:auto;font-variant-numeric:tabular-nums}
+  .ep{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .ep:last-child{border:0} .ep span:last-child{color:var(--muted)}
+  .empty{color:var(--muted);font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+  th{color:var(--muted);text-align:left;font-weight:600;padding:4px 0} td{padding:5px 0;border-top:1px solid var(--line)} td:nth-child(n+2),th:nth-child(n+2){text-align:right}
+  .kv{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--muted)} .kv b{color:var(--ink);font-weight:600}
+  .logline{font:12px ui-monospace,Menlo,monospace;color:var(--muted);margin-top:6px;word-break:break-all}
+  .side{display:flex;flex-direction:column;gap:18px}
+  kbd{background:var(--bg);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;font:11px ui-monospace,Menlo,monospace;color:var(--muted)}
+  .demo{background:var(--amber);color:#fff;padding:3px 9px;border-radius:7px;font-size:12px;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <h1>SO-101 Recorder</h1>
+  <span id="chip" class="chip"><i></i><span id="chipText">…</span></span>
+  <span id="demo" class="demo" hidden>DEMO</span>
+  <span class="spacer"></span>
+  <div class="taskbox"><label for="task">Aufgabe</label><input id="task" spellcheck="false"></div>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <div class="video">
+        <img id="cam" src="/stream.mjpg" alt="Kamera">
+        <div class="overlay"><span class="badge" id="recBadge" hidden>● REC</span><span class="badge" id="timer">0:00</span><span class="badge" id="frames">0 Frames</span></div>
+      </div>
+      <div class="tbar"><div id="tbar"></div></div>
+      <div id="msg" class="msg">…</div>
+      <div class="btns">
+        <button id="bStart" class="b-start">Episode starten<small><kbd>Leertaste</kbd></small></button>
+        <button id="bSave" class="b-save">Speichern<small><kbd>Enter</kbd> / <kbd>→</kbd></small></button>
+        <button id="bDiscard" class="b-discard">Verwerfen<small><kbd>⌫</kbd> / <kbd>←</kbd></small></button>
+      </div>
+      <div class="row2">
+        <button id="bReconnect">Neu verbinden</button>
+        <button id="bFinish">Session beenden &amp; Daten abschließen</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="side">
+    <div class="card">
+      <h2>Fortschritt</h2>
+      <div class="progress"><b id="epN">0</b><span>von <span id="epT">50</span> Episoden (max. 50 echte erlaubt)</span></div>
+      <div class="pbar"><div id="pbar"></div></div>
+      <div class="eps" id="eps"><div class="empty">Noch keine Episode gespeichert.</div></div>
+      <div class="kv" style="margin-top:8px"><span>Speicherort</span><b id="root" style="font-size:12px;word-break:break-all;text-align:right;max-width:70%">–</b></div>
+    </div>
+
+    <div class="card">
+      <h2>Arme</h2>
+      <div id="joints"></div>
+      <div class="legend"><span><span class="dot" style="background:var(--lead)"></span>Leader (du)</span><span><span class="dot" style="background:var(--fol)"></span>Follower (Roboter)</span></div>
+      <div class="kv" style="margin-top:10px"><span>Abweichung Leader ↔ Follower</span><b id="gap">–</b></div>
+      <div class="kv"><span>Regeltakt</span><b id="hz">–</b></div>
+    </div>
+
+    <div class="card" id="simCard" hidden>
+      <h2>Simulation auf der VM</h2>
+      <div id="sim"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const JOINTS = ["shoulder_pan","shoulder_lift","elbow_flex","wrist_flex","wrist_roll","gripper"];
+const LABEL = {shoulder_pan:"Schulter drehen",shoulder_lift:"Schulter heben",elbow_flex:"Ellbogen",wrist_flex:"Handgelenk",wrist_roll:"Handgelenk rollen",gripper:"Greifer"};
+const STATUS = {starting:"Startet",connecting:"Verbindet",waiting_pose:"Ruhepose herstellen",live:"Bereit",recording:"Aufnahme",saving:"Speichert",error:"Fehler",finished:"Beendet"};
+let st = null, taskDirty = false;
+
+const jointsEl = $("joints");
+jointsEl.innerHTML = JOINTS.map(j => `<div class="joint"><div class="name">${LABEL[j]}</div><div class="bars">
+  <div class="track l"><div id="l_${j}"></div></div><div class="track f"><div id="f_${j}"></div></div></div></div>`).join("");
+
+function bar(el, v, j){
+  const lo = j === "gripper" ? 0 : -100, hi = 100;
+  const x = Math.max(lo, Math.min(hi, v));
+  const p = (x - lo) / (hi - lo) * 100;
+  if (j === "gripper"){ el.style.left = "0"; el.style.width = p + "%"; }
+  else { const c = 50; el.style.left = Math.min(c, p) + "%"; el.style.width = Math.abs(p - c) + "%"; }
+}
+const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+
+function render(s){
+  st = s;
+  $("chip").className = "chip " + s.status;
+  $("chipText").textContent = STATUS[s.status] || s.status;
+  $("demo").hidden = !s.demo;
+  $("recBadge").hidden = !s.recording;
+  $("timer").textContent = s.recording ? `${fmt(s.elapsed)} / ${fmt(s.limit)}` : `Limit ${fmt(s.limit)}`;
+  $("frames").textContent = `${s.frames} Frames`;
+  $("tbar").style.width = s.recording ? Math.min(100, s.elapsed / s.limit * 100) + "%" : "0";
+  const m = $("msg"); m.textContent = s.message;
+  m.className = "msg" + (s.status === "error" ? " bad" : (s.status === "waiting_pose" ? " warn" : ""));
+  $("bStart").disabled = s.status !== "live";
+  $("bSave").disabled = !s.recording;
+  $("bDiscard").disabled = !s.recording;
+  $("bReconnect").disabled = s.recording || s.status === "saving";
+  $("bFinish").disabled = s.recording || s.status === "saving" || s.status === "finished";
+  if (!taskDirty && document.activeElement !== $("task")) $("task").value = s.task;
+  $("task").disabled = s.recording;
+  const n = s.episodes.length;
+  $("epN").textContent = n; $("epT").textContent = s.target;
+  $("pbar").style.width = Math.min(100, n / s.target * 100) + "%";
+  $("eps").innerHTML = n ? s.episodes.slice().reverse().map(e => `<div class="ep"><span>Episode ${e.n + 1}</span><span>${e.sec} s · ${e.frames} Frames</span></div>`).join("") : '<div class="empty">Noch keine Episode gespeichert.</div>';
+  $("root").textContent = s.root || "–";
+  JOINTS.forEach(j => {
+    if (s.joints.leader[j] !== undefined){ bar($("l_" + j), s.joints.leader[j], j); bar($("f_" + j), s.joints.follower[j], j); }
+  });
+  $("gap").textContent = s.joints.leader.gripper === undefined ? "–" : s.gap.toFixed(0) + (s.following ? " (folgt)" : " (wartet)");
+  $("hz").textContent = s.hz ? s.hz.toFixed(0) + " Hz" : "–";
+  renderSim(s.sim);
+}
+
+function renderSim(sim){
+  $("simCard").hidden = !sim.enabled;
+  if (!sim.enabled) return;
+  const el = $("sim");
+  if (sim.ok === null){ el.innerHTML = '<div class="empty">Frage VM ab …</div>'; return; }
+  if (!sim.ok){ el.innerHTML = '<div class="empty">VM nicht erreichbar (SSH).</div>'; return; }
+  const d = sim.data;
+  const total = d.datasets.reduce((a, x) => a + x.episodes, 0);
+  const rows = d.datasets.map(x => `<tr><td>${x.name}</td><td>${x.episodes}</td><td>${x.frames}</td></tr>`).join("");
+  const logs = d.logs.map(l => `<div class="logline">${l.file}: ${l.line.replace(/^\[collect\] /, "")}</div>`).join("");
+  el.innerHTML = `<div class="progress"><b>${total}</b><span>Sim-Episoden auf der Platte · ${d.collectors} Sammler-Prozesse aktiv</span></div>
+    <table><tr><th>Datensatz</th><th>Episoden</th><th>Frames</th></tr>${rows}</table>
+    <div class="kv" style="margin-top:8px"><span>GPU (Auslastung, Speicher)</span><b>${d.gpu || "–"}</b></div>${logs}`;
+}
+
+async function cmd(c){
+  const body = {cmd: c, task: $("task").value};
+  taskDirty = false;
+  await fetch("/api/cmd", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+}
+$("bStart").onclick = () => cmd("start");
+$("bSave").onclick = () => cmd("save");
+$("bDiscard").onclick = () => cmd("discard");
+$("bReconnect").onclick = () => cmd("reconnect");
+$("bFinish").onclick = () => { if (confirm("Session beenden und Datensatz abschließen?")) cmd("finish"); };
+$("task").oninput = () => { taskDirty = true; };
+
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space"){ e.preventDefault(); if (!$("bStart").disabled) cmd("start"); }
+  else if (e.code === "Enter" || e.code === "ArrowRight"){ e.preventDefault(); if (!$("bSave").disabled) cmd("save"); }
+  else if (e.code === "Backspace" || e.code === "ArrowLeft"){ e.preventDefault(); if (!$("bDiscard").disabled) cmd("discard"); }
+});
+
+async function poll(){
+  try { render(await (await fetch("/api/state", {cache: "no-store"})).json()); }
+  catch(e){ $("chip").className = "chip error"; $("chipText").textContent = "Server weg"; }
+  setTimeout(poll, 250);
+}
+poll();
+</script>
+</body>
+</html>
