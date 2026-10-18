@@ -7,3 +7,6 @@ __pycache__/
 datasets/
 finetune/
 .venv/
+env.local.sh
+robot.local.sh
+outputs/

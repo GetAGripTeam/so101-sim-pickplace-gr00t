@@ -6,6 +6,11 @@
 # Progress: tail -f $FINETUNE_OUTPUT/train.log
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+# Serialize GPU-heavy training and Cosmos inference on the single-GPU VM.
+mkdir -p "$HOME/.cache/so101"
+exec 8>"$HOME/.cache/so101/gpu.lock"
+echo "Waiting for the shared GPU lock ..."
+flock 8
 DS="${TRAIN_DATASET:-$DATASET_ROOT}"
 [ -f "$DS/meta/modality.json" ] && [ -f "$DS/meta/stats.json" ] || { echo "dataset not prepared at $DS - run prepare_dataset.sh" >&2; exit 1; }
 [ -f "$BASE_MODEL/config.json" ] || { echo "base model missing at $BASE_MODEL" >&2; exit 1; }

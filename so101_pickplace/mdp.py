@@ -15,6 +15,84 @@ if TYPE_CHECKING:
     from isaaclab.sensors import FrameTransformer
 
 
+def camera_image(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, data_type: str = "rgb", normalize: bool = False) -> torch.Tensor:
+    """Read the latest camera frame as a torch tensor (Isaac Lab 3 camera API)."""
+    from isaaclab.utils.images import normalize_camera_image
+
+    frame = env.scene.sensors[sensor_cfg.name].data.output[data_type]
+    images = frame if isinstance(frame, torch.Tensor) else frame.torch
+    return normalize_camera_image(images, data_type) if normalize else images
+
+
+def recolor_prims(
+    env: ManagerBasedRLEnv, env_ids, asset_name: str, rgb: tuple, min_luminance: float = 0.0
+) -> None:
+    """Startup event: set the diffuse colour of every shader under ``/World/envs/env_*/<asset_name>``.
+
+    Used to make the sim assets look like the real station (white robot, navy blocks). Shaders whose
+    current colour is darker than ``min_luminance`` are left alone, so black servos stay black.
+    """
+    import omni.usd
+    from pxr import Gf, Usd, UsdShade
+
+    stage = omni.usd.get_context().get_stage()
+    changed = skipped = 0
+    for i in range(env.num_envs):
+        root = stage.GetPrimAtPath(f"/World/envs/env_{i}/{asset_name}")
+        if not root.IsValid():
+            continue
+        for prim in Usd.PrimRange(root, Usd.TraverseInstanceProxies()):
+            if prim.GetTypeName() != "Shader":
+                continue
+            shader = UsdShade.Shader(prim)
+            for name in ("diffuseColor", "diffuse_color_constant", "baseColor"):
+                inp = shader.GetInput(name)
+                if inp is None:
+                    continue
+                cur = inp.Get()
+                if cur is None or prim.IsInstanceProxy():
+                    skipped += 1
+                    continue
+                if 0.2126 * cur[0] + 0.7152 * cur[1] + 0.0722 * cur[2] < min_luminance:
+                    continue
+                inp.Set(Gf.Vec3f(*rgb))
+                changed += 1
+    print(f"[recolor] {asset_name}: {changed} shader inputs set to {rgb}, {skipped} skipped")
+
+
+def recolor_robot_parts(env: ManagerBasedRLEnv, env_ids, rgb: tuple, keep_prefixes: tuple = ("sts3215",)) -> None:
+    """Startup event: paint the printed robot parts with a new material, keep the servos untouched.
+
+    The robot's own materials live inside USD instances and cannot be edited, so a new material is bound
+    to each ``.../visuals/<part>`` instance root with ``strongerThanDescendants``.
+    """
+    import omni.usd
+    from pxr import Gf, Sdf, Usd, UsdShade
+
+    stage = omni.usd.get_context().get_stage()
+    mat_path = "/World/Looks/RobotRecolor"
+    material = UsdShade.Material.Define(stage, mat_path)
+    shader = UsdShade.Shader.Define(stage, mat_path + "/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*rgb))
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.5)
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    painted = kept = 0
+    for i in range(env.num_envs):
+        root = stage.GetPrimAtPath(f"/World/envs/env_{i}/Robot")
+        if not root.IsValid():
+            continue
+        for prim in Usd.PrimRange(root):
+            if not prim.IsInstance() or "/visuals/" not in str(prim.GetPath()):
+                continue
+            if prim.GetName().startswith(keep_prefixes):
+                kept += 1
+                continue
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+            painted += 1
+    print(f"[recolor] Robot: {painted} printed parts painted {rgb}, {kept} servo parts kept")
+
+
 def joint_pos_target(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Joint position targets currently commanded to the actuators [rad], shape (N, J)."""
     robot: Articulation = env.scene[asset_cfg.name]

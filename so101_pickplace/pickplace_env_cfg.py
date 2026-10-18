@@ -66,12 +66,35 @@ CUBE_SIZE_MM = int(os.environ.get("CUBE_SIZE_MM", "30"))
 CUBE_COLOR = os.environ.get("CUBE_COLOR", "red")
 CUBE_USD = os.path.join(ASSETS_DIR, "cube_blocks", "usd", f"cube_{CUBE_SIZE_MM}mm_{CUBE_COLOR}.usda")
 CUBE_SIZE = CUBE_SIZE_MM / 1000.0
-PAD_SIZE = (0.09, 0.09, 0.004)
+def _env_floats(name: str, default):
+    """Comma separated floats from an environment variable, e.g. FRONT_CAM_POS="0.5,0,0.3"."""
+    value = os.environ.get(name, "").strip()
+    return tuple(float(v) for v in value.split(",")) if value else default
+
+
+# Look of the scene. Everything below is overridable through environment variables so the sim can be
+# matched to the real station without touching the code (defaults = original red/green look):
+#   PAD_COLOR=green|pink|"r,g,b"  PAD_SIZE_MM=90 or "76x51" (a 3x2 inch Post-it)  PAD_YAW_DEG=0
+#   CUBE_RGB="r,g,b" (recolours the block, CUBE_COLOR picks the mesh)  ROBOT_RGB="r,g,b"
+#   TABLE_RGB="r,g,b" (replaces the SeattleLab table by a plain slab; TABLE_X_MIN = its back edge behind
+#   the robot base [m], FLOOR_RGB = floor colour beyond it)  LIGHT_INTENSITY=3000
+PAD_COLORS = {"green": (0.1, 0.7, 0.2), "pink": (0.95, 0.35, 0.62)}
+PAD_COLOR = os.environ.get("PAD_COLOR", "green")
+PAD_RGB = PAD_COLORS[PAD_COLOR] if PAD_COLOR in PAD_COLORS else _env_floats("PAD_COLOR", (0.1, 0.7, 0.2))
+_pad_mm = [float(v) for v in os.environ.get("PAD_SIZE_MM", "90").lower().split("x")]
+PAD_SIZE = (_pad_mm[0] / 1000.0, _pad_mm[-1] / 1000.0, 0.004)  # (along X, along Y, thickness)
+PAD_YAW_RAD = math.radians(float(os.environ.get("PAD_YAW_DEG", "0")))
+CUBE_RGB = _env_floats("CUBE_RGB", None)
+ROBOT_RGB = _env_floats("ROBOT_RGB", None)
+TABLE_RGB = _env_floats("TABLE_RGB", None)
+TABLE_X_MIN = float(os.environ.get("TABLE_X_MIN", "-0.5"))
+FLOOR_RGB = _env_floats("FLOOR_RGB", None)
+LIGHT_INTENSITY = float(os.environ.get("LIGHT_INTENSITY", "3000"))
 
 # Workspace in the env frame [m]. The robot base is at the origin, rotated 90 deg about +Z so the
 # arm faces +X (same seat as the contrib stack task). Block spawns on the +Y half, pad on the -Y half.
 CUBE_POSE_RANGE = {"x": (0.16, 0.27), "y": (0.02, 0.13), "z": (CUBE_SIZE / 2, CUBE_SIZE / 2), "yaw": (-0.8, 0.8)}
-PAD_POSE_RANGE = {"x": (0.16, 0.27), "y": (-0.15, -0.04), "z": (PAD_SIZE[2] / 2, PAD_SIZE[2] / 2), "yaw": (0.0, 0.0)}
+PAD_POSE_RANGE = {"x": (0.16, 0.27), "y": (-0.15, -0.04), "z": (PAD_SIZE[2] / 2, PAD_SIZE[2] / 2), "yaw": (PAD_YAW_RAD - 0.3, PAD_YAW_RAD + 0.3) if PAD_YAW_RAD else (0.0, 0.0)}
 
 # Seat pose (see contrib stack task for the derivation of the Z correction and 90 deg yaw).
 _SO101_MOUNT_Z = -0.03008
@@ -105,8 +128,12 @@ WRIST_CAM_POS = (0.0, -0.045, -0.03)
 WRIST_CAM_FORWARD = (0.0, 0.045, -0.055)  # from the mount toward the jaw tips
 
 # Front camera: in front of the table, looking back at the arm and both objects.
-FRONT_CAM_POS = (0.80, 0.0, 0.42)
-FRONT_CAM_LOOK_AT = (0.18, 0.0, 0.02)
+# Override with FRONT_CAM_POS="x,y,z" FRONT_CAM_LOOK_AT="x,y,z" FRONT_CAM_ROLL_DEG FRONT_CAM_FOCAL_MM
+# (focal 18 mm with the 20.955 mm aperture = 60 deg horizontal field of view).
+FRONT_CAM_POS = _env_floats("FRONT_CAM_POS", (0.80, 0.0, 0.42))
+FRONT_CAM_LOOK_AT = _env_floats("FRONT_CAM_LOOK_AT", (0.18, 0.0, 0.02))
+FRONT_CAM_ROLL = math.radians(float(os.environ.get("FRONT_CAM_ROLL_DEG", "0")))
+FRONT_CAM_FOCAL_MM = float(os.environ.get("FRONT_CAM_FOCAL_MM", "18.0"))
 
 
 def quat_xyzw_from_rpy(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
@@ -159,7 +186,7 @@ def look_at_quat_xyzw(eye: tuple[float, float, float], target: tuple[float, floa
     dx, dy, dz = (t - e for t, e in zip(target, eye))
     yaw = math.atan2(dy, dx)
     pitch = -math.atan2(dz, math.hypot(dx, dy))
-    return quat_xyzw_from_rpy(0.0, pitch, yaw)
+    return quat_xyzw_from_rpy(FRONT_CAM_ROLL if eye == FRONT_CAM_POS else 0.0, pitch, yaw)
 
 
 ##
@@ -174,22 +201,42 @@ class PickPlaceSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = MISSING
     ee_frame: FrameTransformerCfg = MISSING
 
-    table = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Table",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0, 0, 0.707, 0.707]),
-        spawn=UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd",
-            semantic_tags=[("class", "table")],
-        ),
+    table = (
+        AssetBaseCfg(
+            prim_path="{ENV_REGEX_NS}/Table",
+            init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0, 0, 0.707, 0.707]),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd",
+                semantic_tags=[("class", "table")],
+            ),
+        )
+        if not TABLE_RGB
+        else None
     )
     plane = AssetBaseCfg(
         prim_path="/World/GroundPlane",
         init_state=AssetBaseCfg.InitialStateCfg(pos=[0, 0, -1.05]),
-        spawn=GroundPlaneCfg(semantic_tags=[("class", "ground")]),
+        spawn=GroundPlaneCfg(semantic_tags=[("class", "ground")], **({"color": FLOOR_RGB} if FLOOR_RGB else {})),
     )
     light = AssetBaseCfg(
         prim_path="/World/light",
-        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=LIGHT_INTENSITY),
+    )
+    # Plain static slab (top surface at z=0, like the SeattleLab table) so the sim table can look like the real one:
+    # white, ending just behind the robot base.
+    table_top = (
+        AssetBaseCfg(
+            prim_path="{ENV_REGEX_NS}/TableTop",
+            init_state=AssetBaseCfg.InitialStateCfg(pos=[TABLE_X_MIN + 1.0, 0.0, -0.05]),
+            spawn=sim_utils.CuboidCfg(
+                size=(2.0, 2.0, 0.1),
+                collision_props=sim_utils.CollisionPropertiesCfg(),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=TABLE_RGB, roughness=0.7),
+                semantic_tags=[("class", "table")],
+            ),
+        )
+        if TABLE_RGB
+        else None
     )
 
     cube = RigidObjectCfg(
@@ -213,7 +260,7 @@ class PickPlaceSceneCfg(InteractiveSceneCfg):
             size=PAD_SIZE,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.7, 0.2), roughness=0.8),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=PAD_RGB, roughness=0.8),
             semantic_tags=[("class", "target")],
         ),
     )
@@ -225,7 +272,7 @@ class PickPlaceSceneCfg(InteractiveSceneCfg):
         width=IMAGE_WIDTH,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=18.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.05, 5.0)
+            focal_length=FRONT_CAM_FOCAL_MM, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.05, 5.0)
         ),
         offset=CameraCfg.OffsetCfg(pos=FRONT_CAM_POS, rot=look_at_quat_xyzw(FRONT_CAM_POS, FRONT_CAM_LOOK_AT), convention="world"),
     )
@@ -266,6 +313,17 @@ class EventCfg:
         mode="reset",
         params={"pose_range": PAD_POSE_RANGE, "min_separation": 0.0, "asset_cfgs": [SceneEntityCfg("target")]},
     )
+    # Appearance matching (only active when the ROBOT_RGB / CUBE_RGB environment variables are set).
+    recolor_robot = (
+        EventTerm(func=mdp.recolor_robot_parts, mode="startup", params={"rgb": ROBOT_RGB})
+        if ROBOT_RGB
+        else None
+    )
+    recolor_cube = (
+        EventTerm(func=mdp.recolor_prims, mode="startup", params={"asset_name": "Cube", "rgb": CUBE_RGB})
+        if CUBE_RGB
+        else None
+    )
 
 
 @configclass
@@ -278,10 +336,10 @@ class ObservationsCfg:
         cube_pose_b = ObsTerm(func=mdp.object_pose_in_base, params={"object_cfg": SceneEntityCfg("cube")})
         target_pose_b = ObsTerm(func=mdp.object_pose_in_base, params={"object_cfg": SceneEntityCfg("target")})
         front = ObsTerm(
-            func=base_mdp.image, params={"sensor_cfg": SceneEntityCfg("front_cam"), "data_type": "rgb", "normalize": False}
+            func=mdp.camera_image, params={"sensor_cfg": SceneEntityCfg("front_cam"), "data_type": "rgb", "normalize": False}
         )
         wrist = ObsTerm(
-            func=base_mdp.image, params={"sensor_cfg": SceneEntityCfg("wrist_cam"), "data_type": "rgb", "normalize": False}
+            func=mdp.camera_image, params={"sensor_cfg": SceneEntityCfg("wrist_cam"), "data_type": "rgb", "normalize": False}
         )
 
         def __post_init__(self):

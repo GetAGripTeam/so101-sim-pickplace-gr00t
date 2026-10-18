@@ -5,7 +5,7 @@ An Isaac Lab 3.0 / Isaac Sim 6.1 environment in which a TheRobotStudio **SO-101*
 **GR00T N1.7** post-training loop:
 
 * a scripted expert that records demonstrations straight into a **LeRobot v2.1** dataset
-  (front + wrist camera videos, LeRobot-style joint units) — no teleop hardware needed;
+  (front + wrist camera videos recorded, LeRobot-style joint units; the policy uses `front` only) — no teleop hardware needed;
 * an optional leader-arm teleop variant (IsaacTeleop) + HDF5→LeRobot converter;
 * GR00T N1.7 modality config / `modality.json` and the fine-tune, serve and
   **closed-loop sim evaluation** scripts (ZeroMQ client, success rate over N episodes);
@@ -13,7 +13,7 @@ An Isaac Lab 3.0 / Isaac Sim 6.1 environment in which a TheRobotStudio **SO-101*
   the one you print for the real arm.
 
 It follows the Hugging Face blog *[GR00T N1.5 SO-101 tuning](https://huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning)*
-(dataset layout, `modality.json`, `new_embodiment` tag, front+wrist cameras, finetune / inference /
+(dataset layout, `modality.json`, `new_embodiment` tag, front camera only, finetune / inference /
 eval flow, updated to the N1.7 CLI) and NVIDIA's *[GR00T end-to-end workflow – simulation](https://docs.nvidia.com/learning/physical-ai/gr00t-e2e-workflow/latest/simulation-workflow/groot-fine-tuning-sim.html)*
 (record in Isaac Lab → export LeRobot → fine-tune with the LLM frozen → closed-loop sim eval over
 ZeroMQ), with the Arena/G1 pieces replaced by SO-101 equivalents.
@@ -80,7 +80,9 @@ $ISAACLAB_PY scripts/view_env.py --run_policy 600 --viz kit   # watch the expert
   Spawned at random on the +Y half of the workspace with random yaw; a 90 mm green pad spawns on
   the −Y half.
 * **Cameras**: `front` (fixed, 640×480, looking at the arm over the table) and `wrist` (640×480 on
-  the gripper link, looking down the jaws) — the two keys of the SO-100 GR00T modality config.
+  the gripper link, looking down the jaws). Both are rendered and recorded, but the GR00T modality
+  config (`gr00t/so101_sim_config.py`, `gr00t/modality.json`) and `eval_in_sim.py` use `front` only,
+  because the real station has a single camera.
 * **Success**: block resting inside the pad footprint, jaw open, grasp point clear of the block.
 * **Expert** (`scripted_policy.py`): open → hover → descend → close → lift (with a lift check and
   up to two re-grasps) → hover pad → lower → release → retreat, in task space through the
@@ -182,8 +184,7 @@ curl -sL https://raw.githubusercontent.com/ddiddi/so101-sim-pickplace-gr00t/main
 
 `setup_vm.sh` installs system deps, Isaac Sim 6.1 (pip) + Isaac Lab 3.0.0 into `~/work/env_isaaclab`,
 Isaac-GR00T (uv, Python 3.12) with the N1.7-3B weights into `~/work/Isaac-GR00T`, and clones this
-repo into `~/work/so101_sim_pickplace`. It pauses once for `huggingface-cli login` (the
-Cosmos-Reason2-2B backbone is gated: accept its terms on the Hub first). Then edit `env.sh`:
+repo into `~/work/so101_sim_pickplace`. The Cosmos-Reason2-2B backbone is gated: accept its terms on the Hub first. The installer writes machine paths to `env.local.sh`:
 
 ```bash
 export ISAACLAB_PY=$HOME/work/env_isaaclab/bin/python
@@ -191,8 +192,7 @@ export ISAACLAB_DIR=$HOME/work/IsaacLab
 export GR00T_REPO=$HOME/work/Isaac-GR00T
 ```
 
-and in `gr00t_activate` drop the two DGX-Spark-only lines (`activate_spark.sh`, `nvpl`) — on x86_64
-`source .venv/bin/activate` is enough.
+`env.sh` resolves the project directory automatically and enables the Spark-specific activation only on aarch64. The installer defaults to the Isaac Lab commit `472d78801a80d2c80a2c318fb3e9cdf6e187f9dd` (SO-101 support with Isaac Sim 6.1); override `ISAACLAB_REF` to use another compatible release. If Hugging Face is not authenticated yet, dependency installation finishes without downloading weights. Run `uv run hf auth login` inside `~/work/Isaac-GR00T`, accept the backbone terms on Hugging Face, then download the weights with `uv run hf download nvidia/GR00T-N1.7-3B --local-dir checkpoints/GR00T-N1.7-3B`.
 
 ### 3. Run the loop headless
 
