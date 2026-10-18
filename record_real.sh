@@ -13,6 +13,7 @@ set -uo pipefail
 trap 'echo; echo "Interrupted - stopped."; exit 130' INT
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./robot.local.sh
+export PATH="$PWD/.venv/bin:$PATH"   # lets lerobot find the `rerun` viewer binary
 
 RECORD_BIN="${RECORD_BIN:-.venv/bin/lerobot-record}"
 OUT_BASE="${OUT_BASE:-$HOME/so101_real_data}"
